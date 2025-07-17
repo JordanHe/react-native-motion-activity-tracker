@@ -174,12 +174,13 @@ class MotionActivityTrackerModule : Module() {
   private fun registerReceiver() {
     receiver = object : BroadcastReceiver() {
       override fun onReceive(context: Context, intent: Intent) {
+        val events = mutableListOf<Map<String, Any>>()
+
         if (ActivityTransitionResult.hasResult(intent)) {
           val result = ActivityTransitionResult.extractResult(intent)!!
-
-          val formattedEvents = result.transitionEvents.map { event ->
+          events.addAll(result.transitionEvents.map { event ->
             mapOf(
-              "activityType" to  when(event.activityType) {
+              "activityType" to when (event.activityType) {
                 DetectedActivity.IN_VEHICLE -> ActivityType.AUTOMOTIVE
                 DetectedActivity.WALKING -> ActivityType.WALKING
                 DetectedActivity.RUNNING -> ActivityType.RUNNING
@@ -187,23 +188,40 @@ class MotionActivityTrackerModule : Module() {
                 DetectedActivity.STILL -> ActivityType.STATIONARY
                 else -> ActivityType.UNKNOWN
               },
-
-              "transitionType" to when(event.transitionType) {
+              "transitionType" to when (event.transitionType) {
                 ActivityTransition.ACTIVITY_TRANSITION_ENTER -> TransitionType.ENTER
                 ActivityTransition.ACTIVITY_TRANSITION_EXIT -> TransitionType.EXIT
                 else -> TransitionType.UNKNOWN
               },
-
-              "confidence" to  Confidence.UNKNOWN,
-              "timestamp" to event.elapsedRealTimeNanos
+              "confidence" to Confidence.UNKNOWN,
+              "timestamp" to System.currentTimeMillis()
             )
-          }
+          })
+        }
 
-          sendEvent(ACTIVITY_TRANSITION_EVENT,
+        if (ActivityRecognitionResult.hasResult(intent)) {
+          val result = ActivityRecognitionResult.extractResult(intent)!!
+          val probableActivities = result.probableActivities
+
+          events.addAll(probableActivities.map { activity ->
             mapOf(
-              "events" to formattedEvents,
+              "activityType" to when (activity.type) {
+                DetectedActivity.IN_VEHICLE -> ActivityType.AUTOMOTIVE
+                DetectedActivity.WALKING -> ActivityType.WALKING
+                DetectedActivity.RUNNING -> ActivityType.RUNNING
+                DetectedActivity.ON_BICYCLE -> ActivityType.CYCLING
+                DetectedActivity.STILL -> ActivityType.STATIONARY
+                else -> ActivityType.UNKNOWN
+              },
+              "transitionType" to TransitionType.UNKNOWN, // Not available here
+              "confidence" to activity.confidence,
+              "timestamp" to System.currentTimeMillis()
             )
-          )
+          })
+        }
+
+        if (events.isNotEmpty()) {
+          sendEvent(ACTIVITY_TRANSITION_EVENT, mapOf("events" to events))
         }
       }
     }
@@ -266,6 +284,7 @@ class MotionActivityTrackerModule : Module() {
 
     return suspendCoroutine { continuation ->
       ActivityRecognition.getClient(context)
+        .requestActivityUpdates(5000L, pendingIntent)
         .requestActivityTransitionUpdates(request, pendingIntent)
         .addOnSuccessListener {
           Log.i(TAG, "Successfully registered for activity transitions")
@@ -290,6 +309,7 @@ class MotionActivityTrackerModule : Module() {
 
     return suspendCoroutine { continuation ->
     ActivityRecognition.getClient(context)
+      .removeActivityUpdates(pendingIntent)
       .removeActivityTransitionUpdates(pendingIntent)
       .addOnSuccessListener {
         Log.i(TAG, "Successfully deregistered from activity transitions")
