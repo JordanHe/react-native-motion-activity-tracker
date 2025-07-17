@@ -30,11 +30,12 @@
   "author": "revan <tamrevan@gmail.com> (https://github.com/RevanToma)",
   "license": "MIT",
   "homepage": "https://github.com/kingstinct/react-native-motion-activity-tracker#readme",
-  "dependencies": {},
   "devDependencies": {
+    "@expo/config-plugins": "^10.1.2",
     "@types/react": "^18.0.25",
     "expo-module-scripts": "^3.5.2",
-    "expo-modules-core": "^1.12.20"
+    "expo-modules-core": "^1.12.20",
+    "typescript": "^5.8.3"
   },
   "peerDependencies": {
     "expo": "*",

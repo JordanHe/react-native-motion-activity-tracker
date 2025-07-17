@@ -21,7 +21,7 @@ export async function requestPermissionsAsyncAndroid(): Promise<PermissionStatus
   if (Platform.OS === "android") {
     const permissionStatus: PermissionStatus = await getPermissionStatusAsync();
 
-    if (permissionStatus === PermissionStatus.AUTHORIZED) {
+    if (permissionStatus === "AUTHORIZED") {
       return permissionStatus;
     }
 
@@ -40,18 +40,18 @@ export async function requestPermissionsAsyncAndroid(): Promise<PermissionStatus
       const newPermissionStatus: PermissionStatus =
         await getPermissionStatusAsync();
 
-      if (newPermissionStatus === PermissionStatus.AUTHORIZED) {
+      if (newPermissionStatus === "AUTHORIZED") {
         return newPermissionStatus;
       }
 
-      return PermissionStatus.DENIED;
+      return "DENIED" as PermissionStatus;
     } catch (err) {
       console.warn(err);
-      return PermissionStatus.NOT_DETERMINED;
+      return "NOT_DETERMINED" as PermissionStatus;
     }
   }
 
-  return PermissionStatus.PLATFORM_NOT_SUPPORTED;
+  return "PLATFORM_NOT_SUPPORTED" as PermissionStatus;
 }
 
 const emitter = new EventEmitter(MotionActivityTrackerModule);
