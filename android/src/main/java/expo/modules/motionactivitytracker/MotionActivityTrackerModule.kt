@@ -15,9 +15,7 @@ import androidx.core.content.ContextCompat
 import com.google.android.gms.common.ConnectionResult
 import com.google.android.gms.common.GoogleApiAvailability
 import com.google.android.gms.location.ActivityRecognition
-import com.google.android.gms.location.ActivityTransition
-import com.google.android.gms.location.ActivityTransitionRequest
-import com.google.android.gms.location.ActivityTransitionResult
+import com.google.android.gms.location.ActivityRecognitionResult
 import com.google.android.gms.location.DetectedActivity
 import expo.modules.kotlin.exception.Exceptions
 import expo.modules.kotlin.modules.Module
@@ -62,9 +60,6 @@ class MotionActivityTrackerModule : Module() {
     UNKNOWN
   }
 
-  enum class Confidence {
-    UNKNOWN,
-  }
 
   private var receiver: BroadcastReceiver? = null
   private lateinit var context: Context
@@ -176,34 +171,14 @@ class MotionActivityTrackerModule : Module() {
       override fun onReceive(context: Context, intent: Intent) {
         val events = mutableListOf<Map<String, Any>>()
 
-        if (ActivityTransitionResult.hasResult(intent)) {
-          val result = ActivityTransitionResult.extractResult(intent)!!
-          events.addAll(result.transitionEvents.map { event ->
-            mapOf(
-              "activityType" to when (event.activityType) {
-                DetectedActivity.IN_VEHICLE -> ActivityType.AUTOMOTIVE
-                DetectedActivity.WALKING -> ActivityType.WALKING
-                DetectedActivity.RUNNING -> ActivityType.RUNNING
-                DetectedActivity.ON_BICYCLE -> ActivityType.CYCLING
-                DetectedActivity.STILL -> ActivityType.STATIONARY
-                else -> ActivityType.UNKNOWN
-              },
-              "transitionType" to when (event.transitionType) {
-                ActivityTransition.ACTIVITY_TRANSITION_ENTER -> TransitionType.ENTER
-                ActivityTransition.ACTIVITY_TRANSITION_EXIT -> TransitionType.EXIT
-                else -> TransitionType.UNKNOWN
-              },
-              "confidence" to Confidence.UNKNOWN,
-              "timestamp" to System.currentTimeMillis()
-            )
-          })
-        }
-
         if (ActivityRecognitionResult.hasResult(intent)) {
           val result = ActivityRecognitionResult.extractResult(intent)!!
           val probableActivities = result.probableActivities
+          val resultTime = result.time 
 
-          events.addAll(probableActivities.map { activity ->
+          events.addAll(probableActivities
+          .filter { it.confidence > 50 }
+          .map { activity: DetectedActivity ->
             mapOf(
               "activityType" to when (activity.type) {
                 DetectedActivity.IN_VEHICLE -> ActivityType.AUTOMOTIVE
@@ -215,7 +190,7 @@ class MotionActivityTrackerModule : Module() {
               },
               "transitionType" to TransitionType.UNKNOWN, // Not available here
               "confidence" to activity.confidence,
-              "timestamp" to System.currentTimeMillis()
+              "timestamp" to resultTime
             )
           })
         }
@@ -241,8 +216,14 @@ class MotionActivityTrackerModule : Module() {
   }
 
   private fun unregisterReceiver() {
-    context.unregisterReceiver(receiver)
-    receiver = null
+    receiver?.let { 
+        try {
+            context.unregisterReceiver(it)
+        } catch (e: IllegalArgumentException) {
+            // Receiver was already unregistered, ignore
+        }
+        receiver = null
+    }
   }
 
   // START/STOP MONITORING
@@ -255,45 +236,17 @@ class MotionActivityTrackerModule : Module() {
       return TrackingStatus.UNAUTHORIZED
     }
 
-    val transitions = mutableListOf<ActivityTransition>()
-
-    val activities = listOf(
-      DetectedActivity.IN_VEHICLE,
-      DetectedActivity.WALKING,
-      DetectedActivity.ON_BICYCLE,
-      DetectedActivity.RUNNING,
-      DetectedActivity.STILL
-    )
-
-    activities.forEach { activityType ->
-      transitions.add(
-        ActivityTransition.Builder()
-          .setActivityType(activityType)
-          .setActivityTransition(ActivityTransition.ACTIVITY_TRANSITION_ENTER)
-          .build()
-      )
-      transitions.add(
-        ActivityTransition.Builder()
-          .setActivityType(activityType)
-          .setActivityTransition(ActivityTransition.ACTIVITY_TRANSITION_EXIT)
-          .build()
-      )
-    }
-
-    val request = ActivityTransitionRequest(transitions)
-
     return suspendCoroutine { continuation ->
-      ActivityRecognition.getClient(context)
-        .requestActivityUpdates(5000L, pendingIntent)
-        .requestActivityTransitionUpdates(request, pendingIntent)
-        .addOnSuccessListener {
-          Log.i(TAG, "Successfully registered for activity transitions")
-          continuation.resume(TrackingStatus.STARTED)
-        }
-        .addOnFailureListener { e ->
-          Log.e(TAG, "Failed to register for activity transitions", e)
-          continuation.resume(TrackingStatus.FAILED)
-        }
+    ActivityRecognition.getClient(context)
+      .requestActivityUpdates(25000L, pendingIntent)
+      .addOnSuccessListener {
+        Log.i(TAG, "Successfully registered for activity updates")
+        continuation.resume(TrackingStatus.STARTED)
+      }
+      .addOnFailureListener { e ->
+        Log.e(TAG, "Failed to register for activity updates", e)
+        continuation.resume(TrackingStatus.FAILED)
+      }
     }
   }
 
@@ -308,15 +261,19 @@ class MotionActivityTrackerModule : Module() {
     }
 
     return suspendCoroutine { continuation ->
-    ActivityRecognition.getClient(context)
-      .removeActivityUpdates(pendingIntent)
-      .removeActivityTransitionUpdates(pendingIntent)
-      .addOnSuccessListener {
-        Log.i(TAG, "Successfully deregistered from activity transitions")
-        continuation.resume(TrackingStatus.STOPPED)
-      }
-      .addOnFailureListener { e ->
-        Log.e(TAG, "Failed to deregister from activity transitions", e)
+      try {
+        ActivityRecognition.getClient(context)
+        .removeActivityUpdates(pendingIntent)
+        .addOnSuccessListener {
+          Log.i(TAG, "Successfully deregistered from activity updates")
+          continuation.resume(TrackingStatus.STOPPED)
+        }
+        .addOnFailureListener { e ->
+          Log.e(TAG, "Failed to deregister from activity updates", e)
+          continuation.resume(TrackingStatus.FAILED)
+        }
+      } catch (e: Exception) {
+        Log.e(TAG, "Exception during activity recognition removal", e)
         continuation.resume(TrackingStatus.FAILED)
       }
     }
