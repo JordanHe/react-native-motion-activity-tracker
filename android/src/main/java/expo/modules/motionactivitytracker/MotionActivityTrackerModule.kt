@@ -196,7 +196,13 @@ class MotionActivityTrackerModule : Module() {
         }
 
         if (events.isNotEmpty()) {
-          sendEvent(ACTIVITY_TRANSITION_EVENT, mapOf("events" to events))
+          if(appContext.reactContext.hasActiveReactInstance) {
+            try {
+              sendEvent(ACTIVITY_TRANSITION_EVENT, mapOf("events" to events))
+            } catch (e: Exception) {
+              Log.e(TAG, "Error sending event: $e")
+            }
+          }
         }
       }
     }
@@ -238,7 +244,7 @@ class MotionActivityTrackerModule : Module() {
 
     return suspendCoroutine { continuation ->
     ActivityRecognition.getClient(context)
-      .requestActivityUpdates(25000L, pendingIntent)
+      .requestActivityUpdates(15000L, pendingIntent)
       .addOnSuccessListener {
         Log.i(TAG, "Successfully registered for activity updates")
         continuation.resume(TrackingStatus.STARTED)
