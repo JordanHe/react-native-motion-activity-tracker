@@ -220,7 +220,7 @@ class MotionActivityTrackerModule : Module() {
         if (events.isNotEmpty()) {
           try {
             appContext?.reactContext?.takeIf { 
-                it.hasActiveReactInstance() && !it.isDestroyed 
+                it.hasActiveReactInstance
             }?.let {
                 sendEvent(ACTIVITY_TRANSITION_EVENT, mapOf("events" to events))
             }
