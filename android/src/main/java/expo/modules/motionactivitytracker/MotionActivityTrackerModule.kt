@@ -181,8 +181,8 @@ class MotionActivityTrackerModule : Module() {
 
     receiver = object : BroadcastReceiver() {
       override fun onReceive(context: Context, intent: Intent) {
-        
-        if (appContext?.reactContext == null) {
+        val reactContext = appContext.reactContext
+        if (reactContext == null) {
           Log.w(TAG, "React context is null, ignoring activity update")
           return
         }
@@ -218,14 +218,14 @@ class MotionActivityTrackerModule : Module() {
         }
 
         if (events.isNotEmpty()) {
-          try {
-            appContext?.reactContext?.takeIf { 
-                it.hasActiveReactInstance
-            }?.let {
-                sendEvent(ACTIVITY_TRANSITION_EVENT, mapOf("events" to events))
+          if (reactContext != null) {
+            try {
+              sendEvent(ACTIVITY_TRANSITION_EVENT, mapOf("events" to events))
+            } catch (e: Exception) {
+              Log.e(TAG, "Error sending event", e)
             }
-          } catch (e: Exception) {
-              Log.e(TAG, "Error sending event: $e")
+          } else {
+            Log.w(TAG, "ReactContext is null — skipping event emit")
           }
         }
       }
