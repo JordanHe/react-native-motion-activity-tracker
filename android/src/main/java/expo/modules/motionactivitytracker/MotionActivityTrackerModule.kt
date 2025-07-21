@@ -93,7 +93,9 @@ class MotionActivityTrackerModule : Module() {
     }
 
     OnActivityEntersForeground {
-      registerReceiver()
+      if (receiver == null) {
+        registerReceiver()
+      }
     }
 
     OnActivityEntersBackground {
@@ -101,8 +103,12 @@ class MotionActivityTrackerModule : Module() {
     }
 
     Constants{
-      val availability = GoogleApiAvailability.getInstance()
-        .isGooglePlayServicesAvailable(appContext.reactContext!!)
+      val reactContext = appContext.reactContext
+      val availability = if (reactContext != null) {
+        GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(reactContext)
+      } else {
+        ConnectionResult.SERVICE_MISSING
+      }
       val isGooglePlayServicesAvailable = availability == ConnectionResult.SUCCESS
 
       mapOf(
@@ -167,12 +173,28 @@ class MotionActivityTrackerModule : Module() {
   // REGISTER RECEIVER
   @SuppressLint("UnspecifiedRegisterReceiverFlag")
   private fun registerReceiver() {
+
+    if (receiver != null) {
+      Log.d(TAG, "Receiver already registered, skipping")
+      return
+    }
+
     receiver = object : BroadcastReceiver() {
       override fun onReceive(context: Context, intent: Intent) {
+        
+        if (appContext?.reactContext == null) {
+          Log.w(TAG, "React context is null, ignoring activity update")
+          return
+        }
+        
         val events = mutableListOf<Map<String, Any>>()
 
         if (ActivityRecognitionResult.hasResult(intent)) {
-          val result = ActivityRecognitionResult.extractResult(intent)!!
+          val result = ActivityRecognitionResult.extractResult(intent)
+          if (result == null) {
+              Log.w(TAG, "No activity recognition result found")
+              return
+          }
           val probableActivities = result.probableActivities
           val resultTime = result.time 
 
@@ -196,12 +218,14 @@ class MotionActivityTrackerModule : Module() {
         }
 
         if (events.isNotEmpty()) {
-          if(appContext.reactContext.hasActiveReactInstance) {
-            try {
-              sendEvent(ACTIVITY_TRANSITION_EVENT, mapOf("events" to events))
-            } catch (e: Exception) {
-              Log.e(TAG, "Error sending event: $e")
+          try {
+            appContext?.reactContext?.takeIf { 
+                it.hasActiveReactInstance() && !it.isDestroyed 
+            }?.let {
+                sendEvent(ACTIVITY_TRANSITION_EVENT, mapOf("events" to events))
             }
+          } catch (e: Exception) {
+              Log.e(TAG, "Error sending event: $e")
           }
         }
       }
