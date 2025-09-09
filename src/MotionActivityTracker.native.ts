@@ -79,6 +79,24 @@ export function simulateActivityTransition(event: ActivityChangeEvent): void {
   );
 }
 
+
+/**
+ * NEW: Pull any buffered motion events on demand (Android).
+ * Make sure native side exposes `drainMotionEvents()` returning `MotionEvent[]`.
+ */
+export async function drainMotionEvents(): Promise<EventPayload["events"]> {
+  // iOS: no-op; Android: calls native method if available.
+  const fn = (MotionActivityTrackerModule as any).drainMotionEvents;
+  if (typeof fn !== "function") return [];
+  try {
+    const events = await fn();
+    return Array.isArray(events) ? events : [];
+  } catch (e) {
+    console.warn("drainMotionEvents failed:", e);
+    return [];
+  }
+}
+
 /**
  * Get historical motion activity data from the device for iOS.
  * Only supported on iOS. On other platforms, it will return a warning and an empty array.

@@ -1,12 +1,9 @@
 package expo.modules.motionactivitytracker
 
 import android.Manifest
-import android.annotation.SuppressLint
 import android.app.PendingIntent
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
@@ -15,8 +12,6 @@ import androidx.core.content.ContextCompat
 import com.google.android.gms.common.ConnectionResult
 import com.google.android.gms.common.GoogleApiAvailability
 import com.google.android.gms.location.ActivityRecognition
-import com.google.android.gms.location.ActivityRecognitionResult
-import com.google.android.gms.location.DetectedActivity
 import expo.modules.kotlin.exception.Exceptions
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
@@ -26,7 +21,6 @@ import kotlin.coroutines.suspendCoroutine
 
 internal const val ACTIVITY_TRANSITION_EVENT = "onMotionStateChange"
 internal const val REQUEST_CODE = 1001
-internal const val ACTIVITY_TRANSITION_ACTION = "com.motionactivitytracker.ACTIVITY_TRANSITION"
 internal const val TAG = "MotionActivityTracker"
 
 class MotionActivityTrackerModule : Module() {
@@ -61,22 +55,19 @@ class MotionActivityTrackerModule : Module() {
   }
 
 
-  private var receiver: BroadcastReceiver? = null
+
   private lateinit var context: Context
 
   private val pendingIntent: PendingIntent by lazy {
-    val intent = Intent(ACTIVITY_TRANSITION_ACTION)
-        .setPackage(context.packageName)
-
+    val intent = Intent(context, MotionActivityUpdatesReceiver::class.java)
     PendingIntent.getBroadcast(
       context,
       REQUEST_CODE,
       intent,
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-          PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-      } else {
-          PendingIntent.FLAG_UPDATE_CURRENT
-      }
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+      else
+        PendingIntent.FLAG_UPDATE_CURRENT
     )
   }
 
@@ -84,23 +75,15 @@ class MotionActivityTrackerModule : Module() {
     Name("MotionActivityTracker")
 
     OnCreate {
-      context = appContext.reactContext ?: throw Exceptions.ReactContextLost()
-      registerReceiver()
+      context = (appContext.reactContext ?: throw Exceptions.ReactContextLost()).applicationContext
     }
 
-    OnDestroy {
-      unregisterReceiver()
-    }
-
-    OnActivityEntersForeground {
-      if (receiver == null) {
-        registerReceiver()
-      }
-    }
-
-    OnActivityEntersBackground {
-      unregisterReceiver()
-    }
+    // OnActivityEntersForeground {
+    //   val events = MotionEventStore.readAllAndClear(context)
+    //   if (events.isNotEmpty()) {
+    //     sendEvent(ACTIVITY_TRANSITION_EVENT, mapOf("events" to events))
+    //   }
+    // }
 
     Constants{
       val reactContext = appContext.reactContext
@@ -137,11 +120,15 @@ class MotionActivityTrackerModule : Module() {
       return@Coroutine stopActivityTransitionMonitoring()
     }
 
+    AsyncFunction("drainMotionEvents") {
+      return@AsyncFunction MotionEventStore.readAllAndClear(context)
+    }
+
     Function("simulateActivityTransition") {
       activityType: String,
       transitionType: String,
       timestamp: String,
-      confidence: String,
+      confidence: Int,
       ->
       val events = listOf(
         mapOf(
@@ -170,91 +157,6 @@ class MotionActivityTrackerModule : Module() {
     return 4
   }
 
-  // REGISTER RECEIVER
-  @SuppressLint("UnspecifiedRegisterReceiverFlag")
-  private fun registerReceiver() {
-
-    if (receiver != null) {
-      Log.d(TAG, "Receiver already registered, skipping")
-      return
-    }
-
-    receiver = object : BroadcastReceiver() {
-      override fun onReceive(context: Context, intent: Intent) {
-        val reactContext = appContext.reactContext
-        if (reactContext == null) {
-          Log.w(TAG, "React context is null, ignoring activity update")
-          return
-        }
-        
-        val events = mutableListOf<Map<String, Any>>()
-
-        if (ActivityRecognitionResult.hasResult(intent)) {
-          val result = ActivityRecognitionResult.extractResult(intent)
-          if (result == null) {
-              Log.w(TAG, "No activity recognition result found")
-              return
-          }
-          val probableActivities = result.probableActivities
-          val resultTime = result.time 
-
-          events.addAll(probableActivities
-          .filter { it.confidence > 50 }
-          .map { activity: DetectedActivity ->
-            mapOf(
-              "activityType" to when (activity.type) {
-                DetectedActivity.IN_VEHICLE -> ActivityType.AUTOMOTIVE
-                DetectedActivity.WALKING -> ActivityType.WALKING
-                DetectedActivity.RUNNING -> ActivityType.RUNNING
-                DetectedActivity.ON_BICYCLE -> ActivityType.CYCLING
-                DetectedActivity.STILL -> ActivityType.STATIONARY
-                else -> ActivityType.UNKNOWN
-              },
-              "transitionType" to TransitionType.UNKNOWN, // Not available here
-              "confidence" to activity.confidence,
-              "timestamp" to resultTime
-            )
-          })
-        }
-
-        if (events.isNotEmpty()) {
-          if (reactContext != null) {
-            try {
-              sendEvent(ACTIVITY_TRANSITION_EVENT, mapOf("events" to events))
-            } catch (e: Exception) {
-              Log.e(TAG, "Error sending event", e)
-            }
-          } else {
-            Log.w(TAG, "ReactContext is null — skipping event emit")
-          }
-        }
-      }
-    }
-
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-      context.registerReceiver(
-        receiver,
-        IntentFilter(ACTIVITY_TRANSITION_ACTION),
-        Context.RECEIVER_NOT_EXPORTED
-      )
-    } else {
-      context.registerReceiver(
-        receiver,
-        IntentFilter(ACTIVITY_TRANSITION_ACTION),
-      )
-    }
-  }
-
-  private fun unregisterReceiver() {
-    receiver?.let { 
-        try {
-            context.unregisterReceiver(it)
-        } catch (e: IllegalArgumentException) {
-            // Receiver was already unregistered, ignore
-        }
-        receiver = null
-    }
-  }
 
   // START/STOP MONITORING
   private suspend fun startActivityTransitionMonitoring(): TrackingStatus {

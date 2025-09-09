@@ -1,4 +1,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Only this permission is needed -->
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
-    <uses-permission android:name="com.google.android.gms.permission.ACTIVITY_RECOGNITION" />
+
+    <application>
+        <!-- Receiver that gets ActivityRecognition updates via your PendingIntent -->
+        <receiver
+            android:name=".motionactivitytracker.MotionActivityUpdatesReceiver"
+            android:exported="false" />
+    </application>
 </manifest>
