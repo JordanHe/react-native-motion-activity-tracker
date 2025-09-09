@@ -6,7 +6,7 @@
     <application>
         <!-- Receiver that gets ActivityRecognition updates via your PendingIntent -->
         <receiver
-            android:name=".motionactivitytracker.MotionActivityUpdatesReceiver"
+            android:name="expo.modules.motionactivitytracker.MotionActivityUpdatesReceiver"
             android:exported="false" />
     </application>
 </manifest>
