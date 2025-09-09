@@ -15,6 +15,7 @@ class MotionActivityUpdatesReceiver : BroadcastReceiver() {
       "ts" to result.time,
       "type" to when (best.type) {
         DetectedActivity.WALKING     -> "WALK"
+        DetectedActivity.ON_FOOT     -> "WALK"
         DetectedActivity.RUNNING     -> "RUN"
         DetectedActivity.IN_VEHICLE  -> "AUTO"
         DetectedActivity.ON_BICYCLE  -> "BIKE"
